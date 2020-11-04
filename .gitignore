@@ -240,3 +240,6 @@ $RECYCLE.BIN/
 *.csv
 .data/
 .vector_cache/
+*.pt
+*.tagger
+*.jar
