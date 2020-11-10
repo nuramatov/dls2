@@ -7,6 +7,9 @@ def softmax(x): # с tempreture=10, отвечает за гладкость
     e_x = torch.exp(x / 10)
     return e_x / torch.sum(e_x, dim=0)
 
+# do we want to try different n_layers for encoder and decoder?
+# maybe code that later? TODO
+
 class Encoder(nn.Module):
     def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional=False):
         super().__init__()
@@ -17,23 +20,23 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         
         self.embedding = nn.Embedding(input_dim, emb_dim)
-        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout)
+        self.rnn = nn.GRU(emb_dim, hid_dim, bidirectional=bidirectional, dropout=dropout, num_layers=n_layers)
         self.dropout = nn.Dropout(p=dropout)
         
     def forward(self, src):
         embedded = self.dropout(self.embedding(src))
-        output, (hidden, cell) = self.rnn(embedded)
-        return output, hidden, cell
+        output, hidden = self.rnn(embedded)
+        return output, hidden
 
 
 class Attention(nn.Module):
-    def __init__(self, enc_hid_dim, dec_hid_dim, hidden_layers=1):
+    def __init__(self, enc_hid_dim, dec_hid_dim, hidden_layers=1, enc_bidirectional=None):
         super().__init__()
         
         self.enc_hid_dim = enc_hid_dim
         self.dec_hid_dim = dec_hid_dim
         
-        self.attn = nn.Linear((enc_hid_dim + dec_hid_dim)*hidden_layers, enc_hid_dim)
+        self.attn = nn.Linear((enc_hid_dim*(1+enc_bidirectional) + dec_hid_dim)*hidden_layers, enc_hid_dim)
         self.v = nn.Linear(enc_hid_dim, 1)
         
     def forward(self, hidden, encoder_outputs):
@@ -46,9 +49,6 @@ class Attention(nn.Module):
         '''your code'''
         hidden = hidden.reshape(1,encoder_outputs.shape[1],-1)
         hidden_repeated = torch.cat([hidden]*encoder_outputs.shape[0])
-        print('hidden', hidden.shape)
-        print('encoder outputs', encoder_outputs.shape)
-        print('hidden repeated', hidden_repeated.shape)
         result = torch.cat((encoder_outputs, hidden_repeated),2)
         # calculate energy
         '''your code'''
@@ -123,7 +123,7 @@ class Seq2Seq(nn.Module):
         outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
-        enc_states, hidden, cell = self.encoder(src)
+        enc_states, hidden = self.encoder(src)
         
         #first input to the decoder is the <sos> tokens
         input = trg[0,:]
