@@ -20,7 +20,7 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         
         self.embedding = nn.Embedding(input_dim, emb_dim)
-        self.rnn = nn.GRU(emb_dim, hid_dim, bidirectional=bidirectional, dropout=dropout, num_layers=n_layers)
+        self.rnn = nn.GRU(emb_dim, hid_dim, bidirectional=bidirectional, num_layers=n_layers)
         self.dropout = nn.Dropout(p=dropout)
         
     def forward(self, src):
