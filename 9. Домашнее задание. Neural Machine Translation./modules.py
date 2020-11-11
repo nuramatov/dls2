@@ -30,21 +30,24 @@ class Encoder(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, enc_hid_dim, dec_hid_dim, hidden_layers=1, enc_bidirectional=None):
+    def __init__(self, enc_hid_dim, dec_hid_dim, dec_n_layers=1, enc_bidirectional=None):
         super().__init__()
         
         self.enc_hid_dim = enc_hid_dim
         self.dec_hid_dim = dec_hid_dim
         
-        self.attn = nn.Linear((enc_hid_dim*(1+enc_bidirectional) + dec_hid_dim)*hidden_layers, enc_hid_dim)
+        # hidden_layers = enc_n_layers
+        # we have in total dec_n_layers of dec_hid_dim==enc_hid_dim vectors from decoder for current t, repeated across t axis,
+        # and 1+bidirectional output layers of enc_hid_dim==dec_hid_dim vectors from encoder, for each t
+        self.attn = nn.Linear(enc_hid_dim*(1+enc_bidirectional) + dec_hid_dim*dec_n_layers, enc_hid_dim)
         self.v = nn.Linear(enc_hid_dim, 1)
         
     def forward(self, hidden, encoder_outputs):
         # TODO: does the gradient propagate through all the [tensor]*num ops?
         
         # encoder_outputs = [src sent len, batch size, enc_hid_dim]
-        # hidden = [1, batch size, dec_hid_dim]
-        
+        # hidden = [decoder_n_layers, batch_size, dec_hid_dim]
+        # after reshape: hidden = [1, batch_size, dec_hid_dim*dec_n_layers]
         # repeat hidden and concatenate it with encoder_outputs
         '''your code'''
         hidden = hidden.reshape(1,encoder_outputs.shape[1],-1)
@@ -60,9 +63,8 @@ class Attention(nn.Module):
     
     
 class DecoderWithAttention(nn.Module):
-    def __init__(self, output_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout, attention, n_layers=1):
+    def __init__(self, output_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout, attention, n_layers=None, bidirectional=None):
         super().__init__()
-
         self.emb_dim = emb_dim
         self.enc_hid_dim = enc_hid_dim
         self.dec_hid_dim = dec_hid_dim
@@ -70,10 +72,11 @@ class DecoderWithAttention(nn.Module):
         self.attention = attention;
         self.embedding = nn.Embedding(output_dim, emb_dim)
         
-        self.rnn = nn.GRU(input_size = emb_dim+enc_hid_dim, 
-                          hidden_size = dec_hid_dim) # use GRU
+        self.rnn = nn.GRU(input_size = emb_dim+enc_hid_dim*(1+bidirectional), 
+                          hidden_size = dec_hid_dim,
+                          num_layers = n_layers) # use GRU
         
-        self.out = nn.Linear(dec_hid_dim+emb_dim+enc_hid_dim, output_dim) #'''your code''' # linear layer to get next word
+        self.out = nn.Linear(dec_hid_dim*n_layers+emb_dim+enc_hid_dim*(1+bidirectional), output_dim) #'''your code''' # linear layer to get next word
         
         self.dropout = nn.Dropout(dropout)
         
@@ -88,10 +91,11 @@ class DecoderWithAttention(nn.Module):
         weighted_sum = (encoder_outputs*attention).sum(0).unsqueeze(0)
         # concatenate weighted sum and embedded, break through the GRU
         '''your code'''
+        
         output, hidden = self.rnn(torch.cat((embedded,weighted_sum),2), hidden)
         # get predictions
         '''your code'''
-        long_ass_vector = torch.cat((embedded,weighted_sum,hidden),2).squeeze(0)
+        long_ass_vector = torch.cat((embedded,weighted_sum,hidden.view(1,embedded.shape[1],-1)),2).squeeze(0)
         prediction = self.out(long_ass_vector)
         return prediction, hidden #'''your code'''
         
@@ -124,7 +128,6 @@ class Seq2Seq(nn.Module):
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
         enc_states, hidden = self.encoder(src)
-        
         #first input to the decoder is the <sos> tokens
         input = trg[0,:]
         
